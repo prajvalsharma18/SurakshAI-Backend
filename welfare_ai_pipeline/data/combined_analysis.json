@@ -1,0 +1,88 @@
+{
+  "personnel_id": "P001",
+  "reference_date": "2026-09-27",
+  "risk_assessment": {
+    "risk_category": "ELEVATED",
+    "risk_probabilities": {
+      "LOW": 0.18,
+      "ELEVATED": 0.67,
+      "HIGH": 0.15
+    },
+    "model_version": "surakshai-risk-v0.1",
+    "feature_version": "surakshai-phase4-feature-v1",
+    "data_mode": "OPERATIONAL_AND_WELLNESS",
+    "wellness_available": 1
+  },
+  "contributing_factors": [
+    {
+      "feature": "night_duty_7d_count",
+      "contribution": 0.42,
+      "direction": "increases_risk"
+    },
+    {
+      "feature": "workload_30d_avg",
+      "contribution": 0.31,
+      "direction": "increases_risk"
+    },
+    {
+      "feature": "current_consecutive_duty_days",
+      "contribution": 0.24,
+      "direction": "increases_risk"
+    },
+    {
+      "feature": "sleep_quality",
+      "contribution": -0.18,
+      "direction": "reduces_risk"
+    },
+    {
+      "feature": "leave_days_30d",
+      "contribution": -0.12,
+      "direction": "reduces_risk"
+    }
+  ],
+  "anomaly_analysis": {
+    "personnel_id": "P001",
+    "reference_date": "2026-09-27",
+    "anomaly_detected": true,
+    "anomaly_label": "ANOMALY",
+    "anomaly_score": -0.1393
+  },
+  "trend_analysis": {
+    "personnel_id": "P001",
+    "start_date": "2026-08-29",
+    "end_date": "2026-09-27",
+    "observations": 30,
+    "trends": {
+      "night_duty_7d_count": {
+        "direction": "INCREASING",
+        "change_percent": 61.29,
+        "previous_average": 4.43,
+        "recent_average": 7.14
+      },
+      "workload_30d_avg": {
+        "direction": "INCREASING",
+        "change_percent": 14.44,
+        "previous_average": 77.14,
+        "recent_average": 88.29
+      },
+      "current_consecutive_duty_days": {
+        "direction": "INCREASING",
+        "change_percent": 65.0,
+        "previous_average": 5.71,
+        "recent_average": 9.43
+      },
+      "sleep_quality": {
+        "direction": "DECREASING",
+        "change_percent": -22.22,
+        "previous_average": 6.3,
+        "recent_average": 4.9
+      },
+      "leave_days_30d": {
+        "direction": "DECREASING",
+        "change_percent": -28.57,
+        "previous_average": 1.0,
+        "recent_average": 0.71
+      }
+    }
+  }
+}
