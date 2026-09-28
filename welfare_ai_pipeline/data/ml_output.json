@@ -1,0 +1,25 @@
+{
+  "personnel_id": "P001",
+  "reference_date": "2026-09-27",
+  "risk_prediction": {
+    "risk_category": "ELEVATED",
+    "risk_probabilities": {
+      "LOW": 0.18,
+      "ELEVATED": 0.67,
+      "HIGH": 0.15
+    },
+    "model_version": "surakshai-risk-v0.1",
+    "feature_version": "surakshai-phase4-feature-v1",
+    "data_mode": "OPERATIONAL_AND_WELLNESS",
+    "wellness_available": 1
+  },
+  "explanation": {
+    "top_contributing_factors": [
+      {"feature": "night_duty_7d_count", "contribution": 0.42, "direction": "increases_risk"},
+      {"feature": "workload_30d_avg", "contribution": 0.31, "direction": "increases_risk"},
+      {"feature": "current_consecutive_duty_days", "contribution": 0.24, "direction": "increases_risk"},
+      {"feature": "sleep_quality", "contribution": -0.18, "direction": "reduces_risk"},
+      {"feature": "leave_days_30d", "contribution": -0.12, "direction": "reduces_risk"}
+    ]
+  }
+}

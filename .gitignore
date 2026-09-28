@@ -1,0 +1,4 @@
+welfare_ai_pipeline/venv/
+__pycache__/
+*.pyc
+.env
