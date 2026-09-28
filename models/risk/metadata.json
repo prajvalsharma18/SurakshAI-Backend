@@ -1,0 +1,75 @@
+{
+  "model_version": "surakshai-risk-v0.1",
+  "algorithm": "XGBoost",
+  "dataset": "surakshai_phase4_synthetic_risk_dataset.csv",
+  "dataset_rows": 80000,
+  "feature_count": 31,
+  "feature_version": "surakshai-phase4-feature-v1",
+  "classes": {
+    "0": "LOW",
+    "1": "ELEVATED",
+    "2": "HIGH"
+  },
+  "random_seed": 42,
+  "feature_list": [
+    "duty_hours_7d_avg",
+    "duty_hours_30d_avg",
+    "night_duty_7d_count",
+    "night_duty_30d_count",
+    "night_duty_frequency_7d",
+    "night_duty_frequency_30d",
+    "workload_7d_avg",
+    "workload_30d_avg",
+    "workload_trend",
+    "current_consecutive_duty_days",
+    "max_consecutive_duty_days_30d",
+    "days_since_most_recent_leave",
+    "leave_days_30d",
+    "leave_episodes_30d",
+    "current_deployment_days",
+    "deployment_days_30d",
+    "deployment_count_30d",
+    "training_hours_30d",
+    "training_session_count_30d",
+    "transfer_count_30d",
+    "duty_hours_trend",
+    "night_duty_trend",
+    "average_tasks_30d",
+    "high_workload_days_30d",
+    "workload_duty_hours_mean_30d",
+    "deployment_intensity_current",
+    "sleep_quality",
+    "fatigue_level",
+    "perceived_stress",
+    "mood_wellbeing",
+    "wellness_available"
+  ],
+  "training_metrics": {
+    "accuracy": 0.5665833333333333,
+    "precision": 0.569912670861967,
+    "recall": 0.5268353954341729,
+    "macro_f1": 0.5175543731709501,
+    "per_class_f1": {
+      "LOW": 0.6492845786963434,
+      "ELEVATED": 0.6247449172398156,
+      "HIGH": 0.27863362357669125
+    },
+    "confusion_matrix": [
+      [
+        2042,
+        1097,
+        10
+      ],
+      [
+        873,
+        4133,
+        566
+      ],
+      [
+        226,
+        2429,
+        624
+      ]
+    ]
+  }
+}
