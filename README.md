@@ -130,6 +130,67 @@ Request body (maximum 500 records):
 
 The optional `personnel_id` field maps a known internal record; it is never derived from the external identity. `external_source` defaults to `HRMS`. Repeating an identity updates or leaves unchanged the same personnel record. Mapping conflicts are returned in `conflicts` with HTTP 409; malformed fields, unknown fields, or oversized batches return HTTP 400. Results report `processed`, `created`, `updated`, `unchanged`, `deactivated`, conflicts, and per-record actions. Inactive source records are marked `INACTIVE`; records and their related history are retained.
 
+## Admin model-training API
+
+All routes below require a Bearer token for an `ADMIN` account. The training API
+uses only the canonical Phase 4 CSV and the existing XGBoost training/evaluation
+algorithm in `scripts/train_phase4_risk_model.py`. It cannot accept a dataset,
+output path, code, model type, random seed, or arbitrary estimator options.
+
+| Method and path | Purpose | Success |
+|---|---|---|
+| `POST /admin/model-training/plan` | Validate a training instruction or strict config and persist a plan | `201` |
+| `POST /admin/model-training/confirm` | Explicitly enqueue a plan | `202` |
+| `GET /admin/model-training/jobs?status=QUEUED&limit=50` | List persistent plans/jobs | `200` |
+| `GET /admin/model-training/jobs/{job_id}` | Read one job | `200` |
+| `GET /admin/models` | List baseline/candidates and active model | `200` |
+| `POST /admin/models/{model_id}/promote` | Activate a validated candidate | `200` |
+
+A plan accepts exactly one of these forms:
+
+```json
+{"instruction": "train risk model"}
+```
+
+```json
+{"instruction": "train risk model with n_estimators=300, learning_rate=0.05, max_depth=6"}
+```
+
+The parser accepts only that exact command form and the allow-listed names
+`n_estimators` (50–1000), `learning_rate` (0.001–0.3), `max_depth` (2–12),
+`subsample` (0.5–1.0), and `colsample_bytree` (0.5–1.0). Unrecognized,
+duplicate, out-of-range, or ambiguous instructions fail closed with HTTP 400.
+Alternatively, `{"config": {...}}` accepts only those same fields/ranges;
+omitted settings use the established CLI defaults. The plan response contains
+`plan_id`, `status`, normalized `config`, and a summary. Confirm with
+`{"plan_id": "<plan_id>"}`. Unknown plans return 404; non-confirmable plans
+return 409.
+
+Confirmation only enqueues work; it does not train in the API request. MongoDB
+collection `model_training_jobs` persists the plan and job status. Deploy at
+least one worker process alongside the Flask API, using the same environment,
+MongoDB, and shared model-artifact volume:
+
+```powershell
+python scripts/run_model_training_worker.py
+```
+
+The worker polls the persistent queue (default two-second interval); use
+`--poll-interval-seconds 5` to tune it or `--once` to process at most one queued
+job and exit. Candidate artifacts and metadata are isolated under
+`models/risk/candidates/{job_id}/`. A successful job is marked `SUCCEEDED` only
+after its model loads and its feature/class contract and evaluation metrics are
+validated. Failed jobs expose a generic failure code, not stack traces or
+training data.
+
+Candidates never replace the baseline or active model during training.
+Promotion is a separate explicit action and accepts no request body or model
+configuration. The active model is selected through the atomic
+`models/risk/active.json` pointer; the previously active model ID is saved in
+`models/risk/rollback.json`, and candidate artifacts are retained. Existing
+`RiskModel` instances refresh on the next prediction after promotion. The
+unpromoted baseline artifact remains untouched.
+
 ## Security and data lifecycle operations
 
 Set `APP_ENV` explicitly to `development`, `test`, or `production`. Production startup requires distinct random `JWT_SECRET_KEY` and `PSEUDONYMIZATION_SECRET` values of at least 32 characters, an explicit `CORS_ALLOWED_ORIGINS` allowlist, and a configured MongoDB URI. MongoDB TLS must be enabled for non-SRV production URIs (`MONGODB_TLS=true`); `mongodb+srv` connections use the driver TLS defaults. Access tokens use an explicit HMAC algorithm, issuer and audience, and a configurable lifetime capped at 60 minutes. Production debug mode is always disabled.

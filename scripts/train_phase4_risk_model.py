@@ -50,7 +50,9 @@ LABEL_MAP = {'LOW': 0, 'ELEVATED': 1, 'HIGH': 2}
 LABELS = ['LOW', 'ELEVATED', 'HIGH']
 
 
-def main():
+def train_to_output(output_dir, training_config=None, model_version='surakshai-risk-v0.1'):
+    """Run the canonical training/evaluation pipeline into an isolated directory."""
+    training_config = training_config or {}
     df = pd.read_csv(CSV_PATH)
     if list(df.columns[:3]) != ['personnel_id', 'reference_date', 'recommended_split']:
         raise ValueError('Canonical CSV metadata columns do not match the required contract')
@@ -80,11 +82,11 @@ def main():
         num_class=3,
         eval_metric='mlogloss',
         random_state=42,
-        n_estimators=300,
-        learning_rate=0.05,
-        max_depth=6,
-        subsample=0.9,
-        colsample_bytree=0.9,
+        n_estimators=training_config.get('n_estimators', 300),
+        learning_rate=training_config.get('learning_rate', 0.05),
+        max_depth=training_config.get('max_depth', 6),
+        subsample=training_config.get('subsample', 0.9),
+        colsample_bytree=training_config.get('colsample_bytree', 0.9),
     )
     model.fit(
         X_train,
@@ -101,12 +103,13 @@ def main():
     per_class = f1_score(y_test, preds, labels=[0, 1, 2], average=None, zero_division=0)
     matrix = confusion_matrix(y_test, preds, labels=[0, 1, 2]).tolist()
 
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    model_path = MODEL_DIR / 'surakshai_risk_model.json'
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    model_path = output_dir / 'surakshai_risk_model.json'
     model.save_model(str(model_path))
 
     metadata = {
-        'model_version': 'surakshai-risk-v0.1',
+        'model_version': model_version,
         'algorithm': 'XGBoost',
         'dataset': 'surakshai_phase4_synthetic_risk_dataset.csv',
         'dataset_rows': int(len(df)),
@@ -115,6 +118,13 @@ def main():
         'classes': {'0': 'LOW', '1': 'ELEVATED', '2': 'HIGH'},
         'random_seed': 42,
         'feature_list': MODEL_FEATURES,
+        'training_config': {
+            'n_estimators': training_config.get('n_estimators', 300),
+            'learning_rate': training_config.get('learning_rate', 0.05),
+            'max_depth': training_config.get('max_depth', 6),
+            'subsample': training_config.get('subsample', 0.9),
+            'colsample_bytree': training_config.get('colsample_bytree', 0.9),
+        },
         'training_metrics': {
             'accuracy': float(accuracy),
             'precision': float(precision),
@@ -124,13 +134,24 @@ def main():
             'confusion_matrix': matrix,
         },
     }
-    (MODEL_DIR / 'metadata.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
+    metadata_path = output_dir / 'metadata.json'
+    metadata_path.write_text(json.dumps(metadata, indent=2), encoding='utf-8')
+    return {
+        'metadata': metadata,
+        'model_path': str(model_path),
+        'metadata_path': str(metadata_path),
+    }
 
-    print('dataset_rows=', len(df))
+
+def main():
+    result = train_to_output(MODEL_DIR)
+    metadata = result['metadata']
+
+    print('dataset_rows=', metadata['dataset_rows'])
     print('feature_count=', len(MODEL_FEATURES))
     print('metrics=', json.dumps(metadata['training_metrics'], sort_keys=True))
-    print('model_path=', str(model_path))
-    print('metadata_path=', str(MODEL_DIR / 'metadata.json'))
+    print('model_path=', result['model_path'])
+    print('metadata_path=', result['metadata_path'])
 
 
 if __name__ == '__main__':

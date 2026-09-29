@@ -4,6 +4,7 @@ SURAKSHAI Personnel Welfare Intelligence API
 
 from datetime import datetime
 from io import BytesIO
+import re
 
 from flask import Flask, g, request, jsonify, send_file
 from flask_cors import CORS
@@ -158,6 +159,7 @@ welfare_recommendation_service = None
 welfare_workflow_service = None
 welfare_report_service = None
 hrms_sync_service = None
+model_training_service = None
 
 
 def _get_operational_service():
@@ -195,6 +197,19 @@ def _get_hrms_sync_service():
             audit_service=audit_service,
         )
     return hrms_sync_service
+
+
+def _get_model_training_service():
+    global model_training_service
+
+    if model_training_service is None:
+        from src.ml.training_service import ModelTrainingService, TrainingJobRepository
+
+        model_training_service = ModelTrainingService(
+            repository=TrainingJobRepository(get_database()),
+            audit_service=audit_service,
+        )
+    return model_training_service
 
 
 def _get_feature_service():
@@ -743,6 +758,200 @@ def sync_hrms_personnel():
         return jsonify({'error': str(error)}), 400
     except RuntimeError:
         return jsonify({'error': 'HRMS synchronization service unavailable'}), 503
+
+
+# -------------------------------------------------------------------
+# Admin model-training lifecycle
+# -------------------------------------------------------------------
+
+def _public_training_job(record):
+    fields = (
+        'job_id', 'status', 'config', 'created_at', 'updated_at', 'candidate',
+        'failure', 'promoted_by',
+    )
+    return {field: record[field] for field in fields if field in record}
+
+
+def _mobile_training_job(record):
+    candidate = record.get('candidate') or {}
+    terminal = record.get('status') in {'SUCCEEDED', 'FAILED', 'PROMOTED'}
+    failure = record.get('failure') or {}
+    return {
+        'job_id': record.get('job_id'),
+        'requested_by': record.get('requested_by'),
+        'model_version': candidate.get('model_version') or f"surakshai-risk-candidate-{record.get('job_id')}",
+        'dataset_id': candidate.get('dataset_id', 'surakshai_phase4_synthetic_risk_dataset'),
+        'feature_version': candidate.get('feature_version', 'surakshai-phase4-feature-v1'),
+        'status': record.get('status'),
+        'created_at': record.get('created_at'),
+        'started_at': record.get('started_at'),
+        'completed_at': record.get('updated_at') if terminal else None,
+        'metrics': candidate.get('metrics'),
+        'error_summary': failure.get('message'),
+    }
+
+
+@app.route('/admin/model-training/plan', methods=['POST'])
+@require_auth
+@require_permission(PERMISSION_MANAGE_USERS)
+def plan_model_training():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'A JSON object is required'}), 400
+    if len(data) != 1 or not set(data).issubset({'instruction', 'config', 'request_text'}):
+        return jsonify({'error': 'Provide exactly one of instruction or config'}), 400
+    try:
+        instruction = data.get('request_text', data.get('instruction'))
+        record = _get_model_training_service().create_plan(
+            actor=g.authenticated_identity,
+            instruction=instruction,
+            config=data.get('config'),
+        )
+        if 'request_text' in data:
+            return jsonify({
+                'plan_id': record['job_id'],
+                'status': 'AWAITING_CONFIRMATION',
+                'dataset_id': 'surakshai_phase4_synthetic_risk_dataset',
+                'feature_version': 'surakshai-phase4-feature-v1',
+                'model_family': 'xgboost',
+                'training_mode': 'candidate',
+                'candidate_model_version': f"surakshai-risk-candidate-{record['job_id']}",
+                'confirmation_required': True,
+            }), 201
+        return jsonify({
+            'plan_id': record['job_id'],
+            'status': record['status'],
+            'config': record['config'],
+            'summary': 'Train a candidate with the canonical Phase 4 CSV and XGBoost pipeline.',
+        }), 201
+    except ValueError as error:
+        audit_service.record_event(
+            actor_user_id=g.authenticated_identity.get('user_id'),
+            actor_role=g.authenticated_identity.get('role'),
+            action='MODEL_TRAINING_PLAN_REJECTED',
+            resource_type='risk_model_training',
+            result=RESULT_FAILURE,
+            source=request.path,
+            purpose='Validate training request',
+        )
+        return jsonify({'error': str(error)}), 400
+    except RuntimeError:
+        return jsonify({'error': 'Model training service unavailable'}), 503
+
+
+@app.route('/admin/model-training/confirm', methods=['POST'])
+@app.route('/admin/model-training/jobs', methods=['POST'])
+@require_auth
+@require_permission(PERMISSION_MANAGE_USERS)
+def confirm_model_training():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) not in ({'plan_id'}, {'plan_id', 'confirmation'}):
+        return jsonify({'error': 'plan_id is required'}), 400
+    if 'confirmation' in data and data['confirmation'] is not True:
+        return jsonify({'error': 'Explicit confirmation is required'}), 400
+    try:
+        record = _get_model_training_service().confirm_plan(
+            actor=g.authenticated_identity,
+            job_id=data['plan_id'],
+        )
+        if record is None:
+            return jsonify({'error': 'Training plan not found'}), 404
+        if 'confirmation' in data:
+            return jsonify(_mobile_training_job(record)), 202
+        return jsonify(_public_training_job(record)), 202
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 409
+    except RuntimeError:
+        return jsonify({'error': 'Model training service unavailable'}), 503
+
+
+@app.route('/admin/model-training/jobs', methods=['GET'])
+@require_auth
+@require_permission(PERMISSION_MANAGE_USERS)
+def list_model_training_jobs():
+    try:
+        raw_limit = request.args.get('limit', '50')
+        if not raw_limit.isdecimal():
+            raise ValueError('limit must be between 1 and 100')
+        records = _get_model_training_service().list_jobs(
+            status=request.args.get('status'),
+            limit=int(raw_limit),
+        )
+        records = [item for item in records if item.get('status') != 'PLANNED']
+        return jsonify({'jobs': [_mobile_training_job(item) for item in records]}), 200
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    except RuntimeError:
+        return jsonify({'error': 'Model training service unavailable'}), 503
+
+
+@app.route('/admin/model-training/jobs/<job_id>', methods=['GET'])
+@require_auth
+@require_permission(PERMISSION_MANAGE_USERS)
+def get_model_training_job(job_id):
+    try:
+        record = _get_model_training_service().get_job(job_id)
+        if record is None:
+            return jsonify({'error': 'Training job not found'}), 404
+        return jsonify(_mobile_training_job(record)), 200
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    except RuntimeError:
+        return jsonify({'error': 'Model training service unavailable'}), 503
+
+
+@app.route('/admin/models', methods=['GET'])
+@app.route('/admin/model-training/models', methods=['GET'])
+@require_auth
+@require_permission(PERMISSION_MANAGE_USERS)
+def list_admin_models():
+    try:
+        registry = _get_model_training_service().list_models()
+        models = registry.get('models', [])
+        active = next((model for model in models if model.get('status') == 'ACTIVE'), None)
+        def mobile_model(model):
+            status = model.get('status')
+            return {
+                'model_version': model.get('model_version'),
+                'feature_version': model.get('feature_version', 'surakshai-phase4-feature-v1'),
+                'dataset_id': model.get('dataset_id', 'surakshai_phase4_synthetic_risk_dataset'),
+                'trained_at': model.get('trained_at', model.get('created_at')),
+                'status': 'ACTIVE' if status == 'ACTIVE' else ('CANDIDATE' if status in {'SUCCEEDED', 'QUEUED', 'RUNNING'} else status),
+                'metrics': model.get('metrics'),
+                'promotion_allowed': status == 'SUCCEEDED',
+            }
+        return jsonify({
+            'active_model': mobile_model(active) if active else None,
+            'candidate_models': [mobile_model(model) for model in models if model.get('status') == 'SUCCEEDED'],
+        }), 200
+    except (RuntimeError, OSError, ValueError):
+        return jsonify({'error': 'Model registry unavailable'}), 503
+
+
+@app.route('/admin/models/<model_id>/promote', methods=['POST'])
+@app.route('/admin/model-training/models/<model_id>/promote', methods=['POST'])
+@require_auth
+@require_permission(PERMISSION_MANAGE_USERS)
+def promote_admin_model(model_id):
+    data = request.get_json(silent=True)
+    if data not in (None, {}, {'confirmation': True}):
+        return jsonify({'error': 'Promotion does not accept configuration'}), 400
+    try:
+        if model_id not in {'baseline'} and not re.fullmatch(r'[0-9a-f]{32}', model_id):
+            models = _get_model_training_service().list_models().get('models', [])
+            matching = next((item for item in models if item.get('model_version') == model_id), None)
+            if matching is None:
+                return jsonify({'error': 'Candidate model not found'}), 404
+            model_id = matching.get('model_id')
+        result = _get_model_training_service().promote(
+            actor=g.authenticated_identity,
+            model_id=model_id,
+        )
+        return jsonify(result), 200
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 409
+    except RuntimeError:
+        return jsonify({'error': 'Model registry unavailable'}), 503
 
 
 # -------------------------------------------------------------------

@@ -68,7 +68,7 @@ def get_cors_allowed_origins():
             raise ValueError('CORS_ALLOWED_ORIGINS must not contain a wildcard')
         return configured
     if get_app_env() == 'development':
-        return ['http://localhost:5173', 'http://127.0.0.1:5173']
+        return ['http://localhost:8083', 'http://127.0.0.1:8083']
     return []
 
 

@@ -52,7 +52,7 @@ class _PersonnelLookup:
         return {'personnel_id': personnel_id, 'status': 'ACTIVE'}
 
 
-def install_test_users(api_server, personnel_ids=('P001', 'P002', 'P003')):
+def install_test_users(api_server, personnel_ids=('P001', 'P002', 'P003', 'P900')):
     os.environ.setdefault('JWT_SECRET_KEY', 'user-provisioning-test-secret')
     database = _Database()
     service = UserService(

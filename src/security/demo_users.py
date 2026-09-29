@@ -9,6 +9,13 @@ DEVELOPMENT_USERS = {
         'role': 'PERSONNEL',
         'password': 'demo-personnel-password',
     },
+    'mock_personnel': {
+        'user_id': 'dev-personnel-900',
+        'personnel_id': 'P900',
+        'username': 'mock_personnel',
+        'role': 'PERSONNEL',
+        'password': 'SurakshAI@Personnel2026!',
+    },
     'demo_welfare': {
         'user_id': 'dev-welfare-001',
         'username': 'demo_welfare',
